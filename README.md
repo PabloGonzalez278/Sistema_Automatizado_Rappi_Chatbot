@@ -70,7 +70,7 @@ Analisis automatico que genera un reporte ejecutivo completo con:
 
 | Componente | Tecnologia | Justificacion |
 |-----------|-----------|---------------|
-| **LLM** | Claude (Sonnet) | Alta capacidad de razonamiento, tool use nativo, excelente espanol |
+| **LLM** | OpenAI | Alta capacidad de razonamiento, tool use nativo, excelente espanol |
 | **Backend** | Python + FastAPI | Ecosistema de datos maduro (Pandas/NumPy), async, tipado |
 | **Frontend** | React | Componentes reutilizables, ecosystem robusto, renderizado markdown |
 | **Datos** | Pandas + NumPy | Transformaciones eficientes, analisis estadistico built-in |
