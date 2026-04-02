@@ -28,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 _chatbot = None
 _insights_engine = None
@@ -38,7 +38,7 @@ def get_chatbot():
     global _chatbot
     if _chatbot is None:
         if not API_KEY:
-            raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured. Create a .env file with ANTHROPIC_API_KEY=your-key")
+            raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured. Create a .env file with OPENAI_API_KEY=your-key")
         _chatbot = RappiChatbot(api_key=API_KEY)
     return _chatbot
 
@@ -47,7 +47,7 @@ def get_insights_engine():
     global _insights_engine
     if _insights_engine is None:
         if not API_KEY:
-            raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured. Create a .env file with ANTHROPIC_API_KEY=your-key")
+            raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured. Create a .env file with OPENAI_API_KEY=your-key")
         _insights_engine = InsightsEngine(api_key=API_KEY)
     return _insights_engine
 

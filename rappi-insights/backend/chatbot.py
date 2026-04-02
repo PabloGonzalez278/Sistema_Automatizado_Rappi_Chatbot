@@ -1,9 +1,9 @@
 """
-Chatbot Module - Bot conversacional de datos para Rappi usando Claude.
+Chatbot Module - Bot conversacional de datos para Rappi usando OpenAI GPT.
 Maneja consultas en lenguaje natural sobre metricas operacionales.
 """
 import json
-import anthropic
+from openai import OpenAI
 import pandas as pd
 import numpy as np
 from data_loader import (
@@ -32,70 +32,72 @@ CONTEXTO DE NEGOCIO RAPPI:
 - Los datos cubren 9 semanas rolling (L8W mas antigua a L0W mas reciente)
 """
 
-TOOLS = [
+# OpenAI function calling format
+TOOLS_OPENAI = [
     {
-        "name": "analyze_data",
-        "description": """Analiza datos operacionales de Rappi. Usa esta herramienta para responder preguntas sobre metricas, ordenes, tendencias y comparaciones.
-Puedes filtrar por pais, ciudad, zona, tipo de metrica, tipo de zona y priorizacion.
-El analisis puede incluir: filtrado, agregacion, comparacion, tendencias, rankings, y correlaciones.""",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "dataset": {
-                    "type": "string",
-                    "enum": ["metrics", "orders"],
-                    "description": "Dataset a consultar: 'metrics' para metricas operacionales, 'orders' para volumen de ordenes"
+        "type": "function",
+        "function": {
+            "name": "analyze_data",
+            "description": "Analiza datos operacionales de Rappi. Usa esta herramienta para responder preguntas sobre metricas, ordenes, tendencias y comparaciones. Puedes filtrar por pais, ciudad, zona, tipo de metrica, tipo de zona y priorizacion. El analisis puede incluir: filtrado, agregacion, comparacion, tendencias, rankings, y correlaciones.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dataset": {
+                        "type": "string",
+                        "enum": ["metrics", "orders"],
+                        "description": "Dataset a consultar: 'metrics' para metricas operacionales, 'orders' para volumen de ordenes"
+                    },
+                    "countries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro de paises (codigos: AR, BR, CL, CO, CR, EC, MX, PE, UY)"
+                    },
+                    "cities": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro de ciudades"
+                    },
+                    "zones": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro de zonas especificas"
+                    },
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro de metricas especificas"
+                    },
+                    "zone_types": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro por tipo de zona: Wealthy, Non Wealthy"
+                    },
+                    "zone_prioritizations": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro por priorizacion: High Priority, Prioritized, Not Prioritized"
+                    },
+                    "analysis_type": {
+                        "type": "string",
+                        "enum": ["summary", "trend", "comparison", "ranking", "detail", "correlation"],
+                        "description": "Tipo de analisis: summary (resumen), trend (tendencia temporal), comparison (comparar grupos), ranking (top/bottom), detail (datos detallados), correlation (correlaciones entre metricas)"
+                    },
+                    "group_by": {
+                        "type": "string",
+                        "enum": ["COUNTRY", "CITY", "ZONE", "METRIC", "ZONE_TYPE", "ZONE_PRIORITIZATION"],
+                        "description": "Columna para agrupar resultados"
+                    },
+                    "top_n": {
+                        "type": "integer",
+                        "description": "Numero de resultados top/bottom a retornar (default: 10)"
+                    },
+                    "ascending": {
+                        "type": "boolean",
+                        "description": "Si true, ordena ascendente (peores primero). Default: false (mejores primero)"
+                    }
                 },
-                "countries": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Filtro de paises (codigos: AR, BR, CL, CO, CR, EC, MX, PE, UY)"
-                },
-                "cities": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Filtro de ciudades"
-                },
-                "zones": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Filtro de zonas especificas"
-                },
-                "metrics": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Filtro de metricas especificas"
-                },
-                "zone_types": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Filtro por tipo de zona: Wealthy, Non Wealthy"
-                },
-                "zone_prioritizations": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Filtro por priorizacion: High Priority, Prioritized, Not Prioritized"
-                },
-                "analysis_type": {
-                    "type": "string",
-                    "enum": ["summary", "trend", "comparison", "ranking", "detail", "correlation"],
-                    "description": "Tipo de analisis: summary (resumen), trend (tendencia temporal), comparison (comparar grupos), ranking (top/bottom), detail (datos detallados), correlation (correlaciones entre metricas)"
-                },
-                "group_by": {
-                    "type": "string",
-                    "enum": ["COUNTRY", "CITY", "ZONE", "METRIC", "ZONE_TYPE", "ZONE_PRIORITIZATION"],
-                    "description": "Columna para agrupar resultados"
-                },
-                "top_n": {
-                    "type": "integer",
-                    "description": "Numero de resultados top/bottom a retornar (default: 10)"
-                },
-                "ascending": {
-                    "type": "boolean",
-                    "description": "Si true, ordena ascendente (peores primero). Default: false (mejores primero)"
-                }
-            },
-            "required": ["dataset", "analysis_type"]
+                "required": ["dataset", "analysis_type"]
+            }
         }
     }
 ]
@@ -348,7 +350,7 @@ def _correlation_analysis(params):
 
 class RappiChatbot:
     def __init__(self, api_key: str):
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.client = OpenAI(api_key=api_key)
         self.conversation_history: list[dict] = []
         self.data_context = get_context_for_llm()
         self.data_summary = get_data_summary()
@@ -366,8 +368,6 @@ class RappiChatbot:
         ]
 
     def chat(self, user_message: str) -> dict:
-        self.conversation_history.append({"role": "user", "content": user_message})
-
         system_prompt = f"""{SYSTEM_PROMPT}
 
 {self.data_context}
@@ -379,44 +379,63 @@ DATOS DISPONIBLES PARA FILTRAR:
 - Priorizaciones: {', '.join(self.data_summary['zone_prioritizations'])}
 """
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
+        self.conversation_history.append({"role": "user", "content": user_message})
+
+        messages = [{"role": "system", "content": system_prompt}] + self.conversation_history
+
+        response = self.client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=4096,
-            system=system_prompt,
-            tools=TOOLS,
-            messages=self.conversation_history,
+            messages=messages,
+            tools=TOOLS_OPENAI,
+            tool_choice="auto",
         )
 
-        while response.stop_reason == "tool_use":
-            tool_results = []
-            assistant_content = response.content
+        msg = response.choices[0].message
 
-            for block in response.content:
-                if block.type == "tool_use":
-                    result = execute_analysis(block.input)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
+        # Process tool calls iteratively
+        while msg.tool_calls:
+            # Add assistant message with tool calls to history
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        }
+                    }
+                    for tc in msg.tool_calls
+                ]
+            })
 
-            self.conversation_history.append({"role": "assistant", "content": assistant_content})
-            self.conversation_history.append({"role": "user", "content": tool_results})
+            # Execute each tool call and add results
+            for tool_call in msg.tool_calls:
+                args = json.loads(tool_call.function.arguments)
+                result = execute_analysis(args)
+                self.conversation_history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                })
 
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+            # Call again with tool results
+            messages = [{"role": "system", "content": system_prompt}] + self.conversation_history
+            response = self.client.chat.completions.create(
+                model="gpt-4o",
                 max_tokens=4096,
-                system=system_prompt,
-                tools=TOOLS,
-                messages=self.conversation_history,
+                messages=messages,
+                tools=TOOLS_OPENAI,
+                tool_choice="auto",
             )
+            msg = response.choices[0].message
 
-        final_text = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                final_text += block.text
-
-        self.conversation_history.append({"role": "assistant", "content": response.content})
+        # Extract final text
+        final_text = msg.content or ""
+        self.conversation_history.append({"role": "assistant", "content": final_text})
 
         return {
             "response": final_text,

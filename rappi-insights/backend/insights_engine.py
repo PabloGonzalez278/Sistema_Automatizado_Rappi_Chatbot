@@ -1,7 +1,7 @@
 """
 Insights Engine - Genera insights automaticos y reportes ejecutivos a partir de datos operacionales de Rappi.
 """
-import anthropic
+from openai import OpenAI
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -13,7 +13,7 @@ from data_loader import (
 
 class InsightsEngine:
     def __init__(self, api_key: str):
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.client = OpenAI(api_key=api_key)
         self.metrics_df = load_metrics_wide()
         self.orders_df = load_orders_wide()
         self.summary = get_data_summary()
@@ -337,8 +337,8 @@ class InsightsEngine:
         """Use Claude to generate a polished executive report from raw insights."""
         insights_summary = self._format_insights_for_llm(insights)
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
+        response = self.client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=8000,
             messages=[{"role": "user", "content": f"""Genera un reporte ejecutivo en Markdown para el equipo de operaciones de Rappi.
 
@@ -369,7 +369,7 @@ REGLAS:
 """}],
         )
 
-        return response.content[0].text
+        return response.choices[0].message.content
 
     def _format_insights_for_llm(self, insights: dict) -> str:
         """Format raw insights into a readable string for the LLM."""
