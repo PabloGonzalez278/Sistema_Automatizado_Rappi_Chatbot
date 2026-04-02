@@ -15,21 +15,37 @@ from data_loader import (
 SYSTEM_PROMPT = """Eres un analista de datos experto de Rappi, la super-app de delivery lider en Latinoamerica.
 Tu rol es ayudar a usuarios no tecnicos a entender las metricas operacionales de Rappi.
 
-REGLAS:
+REGLAS CRITICAS:
 1. Responde SIEMPRE en espanol, de forma clara y accionable.
-2. Cuando el usuario pregunte sobre datos, usa la funcion analyze_data para obtener los datos reales.
-3. Proporciona contexto de negocio: explica que significa cada metrica y por que importa.
-4. Cuando identifiques tendencias, se especifico con numeros y porcentajes.
-5. Sugiere preguntas de seguimiento relevantes al final de cada respuesta.
-6. Si el usuario pregunta algo que no puedes responder con los datos disponibles, dilo claramente.
-7. Usa formato markdown para tablas y listas cuando sea apropiado.
+2. SIEMPRE usa las herramientas (analyze_data o cross_metric_analysis) para obtener datos reales antes de responder. NUNCA inventes datos.
+3. Para preguntas complejas, puedes hacer MULTIPLES llamadas a herramientas para obtener toda la informacion necesaria.
+4. Proporciona contexto de negocio: explica que significa cada metrica y por que importa para Rappi.
+5. Cuando identifiques tendencias, se especifico con numeros y porcentajes exactos.
+6. Usa formato markdown: tablas para comparaciones, listas para rankings, negritas para datos clave.
+7. Al final de cada respuesta, sugiere 2-3 preguntas de seguimiento relevantes.
 8. Recuerda el contexto de la conversacion para respuestas coherentes.
+
+ESTRATEGIA POR TIPO DE PREGUNTA:
+- FILTRADO ("cuales son las top/mejores/peores X"): Usa analyze_data con analysis_type="ranking", group_by apropiado y top_n
+- COMPARACIONES ("compara X vs Y"): Usa analyze_data con analysis_type="comparison" y group_by por la dimension a comparar
+- TENDENCIAS ("evolucion/tendencia de X"): Usa analyze_data con analysis_type="trend" y filtra por la entidad especifica
+- AGREGACIONES ("promedio/total de X por Y"): Usa analyze_data con analysis_type="summary" y group_by
+- MULTIVARIABLE ("zonas con alto X pero bajo Y"): Usa cross_metric_analysis para cruzar dos metricas
+- INFERENCIA ("que explica/por que"): Combina multiples llamadas: primero datos de ordenes, luego metricas relevantes, y usa tu conocimiento de negocio para inferir causas
 
 CONTEXTO DE NEGOCIO RAPPI:
 - Rappi opera en 9 paises de LATAM: AR, BR, CL, CO, CR, EC, MX, PE, UY
-- Las zonas se clasifican en Wealthy/Non Wealthy y por priorizacion
+- Las zonas se clasifican en Wealthy/Non Wealthy y por priorizacion (High Priority, Prioritized, Not Prioritized)
 - Las metricas cubren: eficiencia operacional, conversion, adopcion de productos, rentabilidad
-- Los datos cubren 9 semanas rolling (L8W mas antigua a L0W mas reciente)
+- Los datos cubren 9 semanas rolling (L8W=8 semanas atras, L0W=semana mas reciente/actual)
+- Perfect Orders: % de ordenes sin problemas (mayor=mejor)
+- % Order Loss: ordenes perdidas (menor=mejor)
+- Gross Profit UE: ganancia bruta unitaria
+- Lead Penetration: conversion desde leads (mayor=mejor)
+- Pro Adoption: usuarios con Rappi Pro
+- Turbo Adoption: ordenes con delivery rapido
+- Restaurants SST>SS CVR: conversion busqueda-a-tienda en restaurantes
+- Retail SST>SS CVR: conversion busqueda-a-tienda en retail
 """
 
 # OpenAI function calling format
@@ -99,8 +115,165 @@ TOOLS_OPENAI = [
                 "required": ["dataset", "analysis_type"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cross_metric_analysis",
+            "description": "Analisis multivariable: cruza dos metricas diferentes para encontrar zonas con combinaciones especificas (ej: alto Lead Penetration pero bajo Perfect Order, zonas con mayor crecimiento de ordenes). Tambien permite analizar crecimiento de ordenes en las ultimas N semanas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "metric_1": {
+                        "type": "string",
+                        "description": "Primera metrica a analizar"
+                    },
+                    "metric_2": {
+                        "type": "string",
+                        "description": "Segunda metrica a analizar (opcional, omitir para analisis de crecimiento de ordenes)"
+                    },
+                    "condition": {
+                        "type": "string",
+                        "enum": ["high_low", "low_high", "both_high", "both_low", "top_growth", "bottom_growth"],
+                        "description": "Condicion: high_low (metric_1 alta, metric_2 baja), low_high (inverso), both_high, both_low, top_growth (mayor crecimiento), bottom_growth (mayor caida)"
+                    },
+                    "countries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro de paises"
+                    },
+                    "top_n": {
+                        "type": "integer",
+                        "description": "Numero de resultados (default: 10)"
+                    },
+                    "weeks_back": {
+                        "type": "integer",
+                        "description": "Numero de semanas hacia atras para calcular crecimiento (default: 5)"
+                    }
+                },
+                "required": ["condition"]
+            }
+        }
     }
 ]
+
+
+def execute_cross_metric_analysis(params: dict) -> str:
+    """Execute cross-metric analysis for multivariable queries."""
+    condition = params.get("condition", "high_low")
+    metric_1 = params.get("metric_1")
+    metric_2 = params.get("metric_2")
+    countries = params.get("countries")
+    top_n = params.get("top_n", 10)
+    weeks_back = params.get("weeks_back", 5)
+
+    metrics_df = load_metrics_wide()
+    orders_df = load_orders_wide()
+
+    if countries:
+        metrics_df = metrics_df[metrics_df["COUNTRY"].isin(countries)]
+        orders_df = orders_df[orders_df["COUNTRY"].isin(countries)]
+
+    week_cols_m = [c for c in metrics_df.columns if c.endswith("_ROLL")]
+    week_cols_o = [c for c in orders_df.columns if c.startswith("L") and c.endswith("W")]
+
+    result = []
+
+    # Growth analysis for orders
+    if condition in ["top_growth", "bottom_growth"]:
+        latest_col = week_cols_o[-1]
+        start_col = week_cols_o[-min(weeks_back, len(week_cols_o))]
+
+        orders_df = orders_df.copy()
+        orders_df["growth"] = orders_df[latest_col] - orders_df[start_col]
+        orders_df["growth_pct"] = np.where(
+            orders_df[start_col] != 0,
+            (orders_df[latest_col] - orders_df[start_col]) / orders_df[start_col].abs() * 100,
+            0
+        )
+
+        ascending = condition == "bottom_growth"
+        sorted_df = orders_df.sort_values("growth_pct", ascending=ascending).head(top_n)
+
+        direction = "mayor caida" if ascending else "mayor crecimiento"
+        result.append(f"Zonas con {direction} en ordenes (ultimas {weeks_back} semanas):\n")
+
+        for _, row in sorted_df.iterrows():
+            result.append(f"  {row['COUNTRY']}/{row['CITY']}/{row['ZONE']}: "
+                         f"{row[start_col]:,.0f} -> {row[latest_col]:,.0f} "
+                         f"({row['growth_pct']:+.1f}%)")
+
+            # Add weekly detail
+            weekly = [f"{row[w]:,.0f}" for w in week_cols_o[-weeks_back:]]
+            result.append(f"    Semanas: {' -> '.join(weekly)}")
+
+        # If metric_1 provided, also show that metric for these zones
+        if metric_1:
+            result.append(f"\nMetrica '{metric_1}' para estas zonas:")
+            for _, row in sorted_df.iterrows():
+                mdata = metrics_df[(metrics_df["ZONE"] == row["ZONE"]) &
+                                   (metrics_df["METRIC"] == metric_1)]
+                if len(mdata) > 0:
+                    mrow = mdata.iloc[0]
+                    latest_m = mrow[week_cols_m[-1]]
+                    start_m = mrow[week_cols_m[-min(weeks_back, len(week_cols_m))]]
+                    change_m = latest_m - start_m
+                    result.append(f"  {row['ZONE']}: {latest_m:.4f} (cambio: {change_m:+.4f})")
+
+        return "\n".join(result)
+
+    # Cross-metric analysis
+    if not metric_1 or not metric_2:
+        return "Se requieren metric_1 y metric_2 para analisis cruzado."
+
+    latest_m = week_cols_m[-1]
+
+    pivot = metrics_df.pivot_table(
+        index=["COUNTRY", "CITY", "ZONE", "ZONE_TYPE", "ZONE_PRIORITIZATION"],
+        columns="METRIC",
+        values=latest_m,
+        aggfunc="mean"
+    ).reset_index()
+
+    if metric_1 not in pivot.columns or metric_2 not in pivot.columns:
+        available = [c for c in pivot.columns if c not in ["COUNTRY", "CITY", "ZONE", "ZONE_TYPE", "ZONE_PRIORITIZATION"]]
+        return f"Metricas no encontradas. Disponibles: {', '.join(available)}"
+
+    pivot = pivot.dropna(subset=[metric_1, metric_2])
+
+    m1_median = pivot[metric_1].median()
+    m2_median = pivot[metric_2].median()
+
+    if condition == "high_low":
+        filtered = pivot[(pivot[metric_1] > m1_median) & (pivot[metric_2] < m2_median)]
+        desc = f"{metric_1} ALTO (>{m1_median:.4f}) y {metric_2} BAJO (<{m2_median:.4f})"
+    elif condition == "low_high":
+        filtered = pivot[(pivot[metric_1] < m1_median) & (pivot[metric_2] > m2_median)]
+        desc = f"{metric_1} BAJO (<{m1_median:.4f}) y {metric_2} ALTO (>{m2_median:.4f})"
+    elif condition == "both_high":
+        filtered = pivot[(pivot[metric_1] > m1_median) & (pivot[metric_2] > m2_median)]
+        desc = f"Ambas metricas ALTAS"
+    elif condition == "both_low":
+        filtered = pivot[(pivot[metric_1] < m1_median) & (pivot[metric_2] < m2_median)]
+        desc = f"Ambas metricas BAJAS"
+    else:
+        filtered = pivot
+
+    filtered = filtered.sort_values(metric_1, ascending=False).head(top_n)
+
+    result.append(f"Analisis cruzado: {desc}")
+    result.append(f"Mediana {metric_1}: {m1_median:.4f} | Mediana {metric_2}: {m2_median:.4f}")
+    result.append(f"Zonas encontradas: {len(filtered)}\n")
+
+    for _, row in filtered.iterrows():
+        result.append(f"  {row['COUNTRY']}/{row['CITY']}/{row['ZONE']} ({row['ZONE_TYPE']}, {row['ZONE_PRIORITIZATION']}):")
+        result.append(f"    {metric_1}: {row[metric_1]:.4f} | {metric_2}: {row[metric_2]:.4f}")
+
+    # Correlation between the two
+    corr = pivot[metric_1].corr(pivot[metric_2])
+    result.append(f"\nCorrelacion entre {metric_1} y {metric_2}: {corr:.3f}")
+
+    return "\n".join(result)
 
 
 def execute_analysis(params: dict) -> str:
@@ -357,13 +530,13 @@ class RappiChatbot:
 
     def get_suggestions(self) -> list[str]:
         return [
-            "¿Cual es el pais con mas ordenes esta semana?",
-            "¿Como ha evolucionado Perfect Orders en Colombia?",
-            "Compara las zonas Wealthy vs Non Wealthy en metricas de conversion",
-            "¿Cuales son las 5 ciudades con peor % Order Loss?",
+            "¿Cuales son las 5 zonas con mayor % Lead Penetration esta semana?",
+            "Compara el Perfect Order entre zonas Wealthy y Non Wealthy en Mexico",
+            "Muestra la evolucion de Gross Profit UE en Chapinero ultimas 8 semanas",
+            "¿Cual es el promedio de Lead Penetration por pais?",
+            "¿Que zonas tienen alto Lead Penetration pero bajo Perfect Order?",
+            "¿Cuales son las zonas que mas crecen en ordenes en las ultimas 5 semanas?",
             "¿Que correlacion existe entre Pro Adoption y Gross Profit?",
-            "Muestra las tendencias de Turbo Adoption por pais",
-            "¿Que zonas priorizadas tienen peor rendimiento?",
             "Dame un resumen de las metricas de restaurantes en Mexico",
         ]
 
@@ -415,7 +588,10 @@ DATOS DISPONIBLES PARA FILTRAR:
             # Execute each tool call and add results
             for tool_call in msg.tool_calls:
                 args = json.loads(tool_call.function.arguments)
-                result = execute_analysis(args)
+                if tool_call.function.name == "cross_metric_analysis":
+                    result = execute_cross_metric_analysis(args)
+                else:
+                    result = execute_analysis(args)
                 self.conversation_history.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,

@@ -7,14 +7,14 @@ import './ChatView.css';
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const INITIAL_SUGGESTIONS = [
-  "¿Cual es el pais con mas ordenes esta semana?",
-  "¿Como ha evolucionado Perfect Orders en Colombia?",
-  "Compara zonas Wealthy vs Non Wealthy en conversion",
-  "¿Cuales son las 5 ciudades con peor % Order Loss?",
-  "¿Que correlacion hay entre Pro Adoption y Gross Profit?",
-  "Muestra tendencias de Turbo Adoption por pais",
+  "¿Cuales son las 5 zonas con mayor % Lead Penetration esta semana?",
+  "Compara el Perfect Order entre zonas Wealthy y Non Wealthy en Mexico",
+  "Muestra la evolucion de Gross Profit UE en Chapinero ultimas 8 semanas",
+  "¿Cual es el promedio de Lead Penetration por pais?",
+  "¿Que zonas tienen alto Lead Penetration pero bajo Perfect Order?",
+  "¿Cuales son las zonas que mas crecen en ordenes en las ultimas 5 semanas?",
+  "¿Que correlacion existe entre Pro Adoption y Gross Profit?",
   "Dame un resumen de metricas de restaurantes en Mexico",
-  "¿Que zonas priorizadas tienen peor rendimiento?",
 ];
 
 function ChatView() {
@@ -52,7 +52,7 @@ function ChatView() {
       const errMsg = error.response?.data?.detail || error.message || 'Error de conexion';
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `**Error:** ${errMsg}\n\nAsegurate de que el backend este corriendo en \`${API_BASE}\` y que la API key de Anthropic este configurada.`,
+        content: `**Error:** ${errMsg}\n\nAsegurate de que el backend este corriendo en \`${API_BASE}\` y que la API key de OpenAI este configurada en el archivo .env`,
         isError: true,
       }]);
     } finally {
