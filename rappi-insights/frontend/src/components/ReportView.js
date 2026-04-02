@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { FiFileText, FiDownload, FiRefreshCw, FiExternalLink } from 'react-icons/fi';
+import { FiFileText, FiDownload, FiRefreshCw, FiExternalLink, FiMail, FiDatabase } from 'react-icons/fi';
 import axios from 'axios';
 import './ReportView.css';
 
@@ -10,6 +10,10 @@ function ReportView() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [emailInput, setEmailInput] = useState('');
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [exportingCSV, setExportingCSV] = useState(false);
 
   const generateReport = async () => {
     setLoading(true);
@@ -39,6 +43,46 @@ function ReportView() {
     window.open(`${API_BASE}/api/insights/report/html`, '_blank');
   };
 
+  const exportCSV = async () => {
+    setExportingCSV(true);
+    try {
+      const response = await axios.post(`${API_BASE}/api/export/report-csv`, {}, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rappi-insights-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Error al exportar CSV: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setExportingCSV(false);
+    }
+  };
+
+  const sendEmail = async () => {
+    if (!emailInput.trim()) return;
+    setEmailStatus('sending');
+    try {
+      const response = await axios.post(`${API_BASE}/api/email/send-report`, {
+        to_email: emailInput.trim(),
+      });
+      setEmailStatus('success');
+      setTimeout(() => {
+        setShowEmailForm(false);
+        setEmailStatus(null);
+        setEmailInput('');
+      }, 3000);
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      setEmailStatus('error');
+      alert('Error al enviar email: ' + detail);
+    }
+  };
+
   return (
     <div className="report-view">
       <header className="report-header">
@@ -52,8 +96,14 @@ function ReportView() {
               <button className="action-btn" onClick={downloadMarkdown}>
                 <FiDownload /> Descargar MD
               </button>
+              <button className="action-btn" onClick={exportCSV} disabled={exportingCSV}>
+                <FiDatabase /> {exportingCSV ? 'Exportando...' : 'Exportar CSV'}
+              </button>
               <button className="action-btn" onClick={openHtmlReport}>
                 <FiExternalLink /> Ver HTML
+              </button>
+              <button className="action-btn email-btn" onClick={() => setShowEmailForm(!showEmailForm)}>
+                <FiMail /> Enviar Email
               </button>
             </>
           )}
@@ -63,6 +113,28 @@ function ReportView() {
           </button>
         </div>
       </header>
+
+      {showEmailForm && (
+        <div className="email-form-bar">
+          <input
+            type="email"
+            value={emailInput}
+            onChange={(e) => setEmailInput(e.target.value)}
+            placeholder="correo@ejemplo.com"
+            className="email-input"
+          />
+          <button
+            className="generate-btn"
+            onClick={sendEmail}
+            disabled={!emailInput.trim() || emailStatus === 'sending'}
+          >
+            {emailStatus === 'sending' ? 'Enviando...' : emailStatus === 'success' ? 'Enviado!' : 'Enviar Reporte'}
+          </button>
+          {emailStatus === 'success' && (
+            <span className="email-success">Reporte enviado exitosamente</span>
+          )}
+        </div>
+      )}
 
       <div className="report-content">
         {!report && !loading && !error && (

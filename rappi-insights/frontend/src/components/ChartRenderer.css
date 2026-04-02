@@ -1,0 +1,24 @@
+.chart-container {
+  margin: 12px 0;
+  padding: 16px;
+  background: #fafbfc;
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+}
+
+.chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--rappi-dark);
+  margin: 0 0 12px 0;
+  text-align: center;
+}
+
+.chart-container .recharts-cartesian-grid-horizontal line,
+.chart-container .recharts-cartesian-grid-vertical line {
+  stroke: #f0f0f0;
+}
+
+.chart-container .recharts-tooltip-wrapper {
+  z-index: 10;
+}

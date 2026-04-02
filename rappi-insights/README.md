@@ -10,6 +10,7 @@ Sistema basado en IA que democratiza el acceso a datos operacionales y automatiz
 │  ┌──────────────────┐  ┌─────────────────────────────┐  │
 │  │ Bot Conversacional│  │  Visor de Reporte Ejecutivo │  │
 │  │  (ChatView)       │  │  (ReportView)               │  │
+│  │  + ChartRenderer  │  │  + Export CSV/Email          │  │
 │  └────────┬─────────┘  └────────────┬────────────────┘  │
 └───────────┼─────────────────────────┼────────────────────┘
             │         HTTP/REST       │
@@ -17,13 +18,17 @@ Sistema basado en IA que democratiza el acceso a datos operacionales y automatiz
 │           ▼      BACKEND (FastAPI)  ▼                    │
 │  ┌──────────────────┐  ┌─────────────────────────────┐  │
 │  │   Chatbot Module  │  │   Insights Engine           │  │
-│  │ (GPT-4o + Tools)  │  │  (Analisis Automatico)      │  │
+│  │ (GPT-4o + 3 Tools)│  │  (Analisis Automatico)      │  │
 │  └────────┬─────────┘  └────────────┬────────────────┘  │
 │           │                         │                    │
 │  ┌────────▼─────────────────────────▼────────────────┐  │
 │  │              Data Loader (Pandas)                  │  │
 │  │     Carga, limpia y transforma datos Excel         │  │
-│  └────────────────────┬──────────────────────────────┘  │
+│  └─────────┬──────────────────┬──────────────────────┘  │
+│            │   Export/Email   │                          │
+│  ┌─────────▼──────┐  ┌───────▼──────────────────┐      │
+│  │  CSV Export     │  │  SMTP Email Service      │      │
+│  └────────────────┘  └──────────────────────────┘      │
 └───────────────────────┼──────────────────────────────────┘
                         │
               ┌─────────▼─────────┐
@@ -35,16 +40,17 @@ Sistema basado en IA que democratiza el acceso a datos operacionales y automatiz
 
 ## Productos
 
-### Producto 1: Bot Conversacional de Datos
+### Producto 1: Bot Conversacional de Datos (70%)
 
 Chatbot para usuarios no tecnicos que permite hacer preguntas en lenguaje natural sobre metricas operacionales. Utiliza GPT-4o con Function Calling para ejecutar analisis reales sobre los datos.
 
-**Herramientas de IA disponibles:**
+**Herramientas de IA disponibles (3 tools):**
 
 | Herramienta | Funcion |
 |-------------|---------|
 | `analyze_data` | Filtrado, agregacion, comparacion, tendencias, rankings y correlaciones sobre metricas y ordenes |
 | `cross_metric_analysis` | Analisis multivariable cruzando dos metricas, deteccion de crecimiento/caida en ordenes por zona |
+| `generate_chart_data` | **[BONUS]** Genera datos estructurados para visualizaciones interactivas (lineas, barras, areas) |
 
 **Capacidades demostradas (6 casos de uso):**
 
@@ -63,8 +69,10 @@ Chatbot para usuarios no tecnicos que permite hacer preguntas en lenguaje natura
 - Memoria conversacional (recuerda preguntas anteriores en la sesion)
 - Respuestas con formato markdown (tablas, listas, negritas)
 - Estrategia de analisis por tipo de pregunta documentada en el system prompt
+- **[BONUS]** Graficos interactivos inline con Recharts (lineas, barras, areas)
+- **[BONUS]** Exportacion de conversacion a CSV
 
-### Producto 2: Sistema de Insights Automaticos
+### Producto 2: Sistema de Insights Automaticos (30%)
 
 Analisis automatico que genera un reporte ejecutivo completo con:
 
@@ -75,9 +83,41 @@ Analisis automatico que genera un reporte ejecutivo completo con:
 5. **Oportunidades**: Zonas prioritarias bajo rendimiento, gaps de adopcion, momentum positivo (WoW >5%)
 6. **Recomendaciones accionables**: Top 5-7 acciones priorizadas por impacto y urgencia
 
-**Salida**: Markdown (descargable), HTML estilizado con branding Rappi
+**Salida**: Markdown (descargable), HTML estilizado con branding Rappi, **[BONUS]** CSV exportable, **[BONUS]** Envio automatico por email
 
 **Volumenes detectados**: ~30 anomalias, ~25 tendencias preocupantes, ~39 benchmarks, ~20 correlaciones, ~30 oportunidades
+
+## Bonus Features Implementados
+
+### Bonus 1: Visualizacion de Datos con Graficos Interactivos
+
+El chatbot genera automaticamente graficos interactivos cuando la pregunta involucra tendencias temporales o comparaciones entre grupos:
+
+- **Graficos de linea**: Para tendencias temporales y evoluciones semanales
+- **Graficos de barra**: Para comparaciones entre paises, ciudades o zonas
+- **Graficos de area**: Para visualizar evoluciones con area sombreada
+- **Tecnologia**: Recharts (React charting library) con diseño responsivo
+- **Implementacion**: El LLM decide cuando generar un grafico mediante la herramienta `generate_chart_data`, que retorna datos estructurados al frontend para renderizado con el componente `ChartRenderer`
+
+**Flujo tecnico:**
+1. GPT-4o decide invocar `generate_chart_data` con `chart_type`, filtros y agrupaciones
+2. El backend ejecuta la query sobre Pandas y estructura los datos en formato `{type, title, data[], series[]}`
+3. El campo `chart_data` se incluye en la respuesta JSON del endpoint `/api/chat`
+4. El frontend detecta `chart_data` en la respuesta y renderiza el componente `ChartRenderer` con Recharts
+
+### Bonus 2: Exportacion de Resultados (CSV)
+
+- **Exportar conversacion del chat**: Boton "Exportar CSV" en el header del chatbot que descarga toda la conversacion (preguntas y respuestas) como archivo CSV con encoding UTF-8 + BOM
+- **Exportar datos filtrados**: Endpoint `POST /api/export/csv` permite exportar cualquier subset de datos como CSV con filtros por dataset, pais, ciudad, metrica y tipo de zona
+- **Exportar insights del reporte**: Endpoint `POST /api/export/report-csv` y boton "Exportar CSV" en la vista de reporte que exporta todas las anomalias, tendencias y oportunidades detectadas como CSV estructurado con columnas: Seccion, Pais, Ciudad, Zona, Metrica, Valor, Detalle
+
+### Bonus 3: Envio Automatico de Reportes por Email
+
+- **Boton "Enviar Email"** en la vista de reporte ejecutivo que abre un formulario inline
+- El usuario ingresa un correo destino y el sistema envia el reporte completo
+- **Formato del email**: Version HTML estilizada con branding Rappi + archivo Markdown adjunto
+- **Configuracion SMTP**: Soporta cualquier servidor SMTP (Gmail, Outlook, etc.) configurado via variables de entorno
+- **Variables necesarias**: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` en el archivo `.env`
 
 ## Stack Tecnologico
 
@@ -86,17 +126,21 @@ Analisis automatico que genera un reporte ejecutivo completo con:
 | **LLM** | GPT-4o (OpenAI) | Alta capacidad de razonamiento, function calling nativo, buen manejo de espanol, velocidad de respuesta |
 | **Backend** | Python 3.12 + FastAPI | Ecosistema de datos maduro (Pandas/NumPy), async nativo, validacion con Pydantic, docs automaticos |
 | **Frontend** | React 19 | Componentes reutilizables, renderizado markdown nativo, ecosystem robusto |
+| **Graficos** | Recharts | Libreria de graficos declarativa para React, basada en D3.js, componentes responsivos |
 | **Datos** | Pandas + NumPy | Transformaciones eficientes sobre ~13K filas, analisis estadistico built-in (z-score, correlacion, regresion lineal) |
-| **Integracion LLM** | OpenAI SDK + Function Calling | Permite al LLM ejecutar 2 herramientas de analisis con parametros dinamicos sobre datos reales |
+| **Integracion LLM** | OpenAI SDK + Function Calling | Permite al LLM ejecutar 3 herramientas de analisis con parametros dinamicos sobre datos reales |
+| **Email** | smtplib (Python stdlib) | Envio SMTP nativo sin dependencias externas, soporte TLS |
 
 ### Decisiones de Diseno
 
 - **Function Calling vs RAG**: Se eligio Function Calling porque permite al LLM ejecutar queries dinamicas y calculos precisos sobre los datos reales. RAG con embeddings pierde precision numerica y no permite calculos en tiempo real (promedios, tendencias, correlaciones).
-- **Dos herramientas separadas**: `analyze_data` para queries estandar (filtrado, ranking, tendencia) y `cross_metric_analysis` para analisis multivariable que requiere cruzar dos metricas o calcular crecimiento de ordenes. Esto simplifica el schema de cada tool y mejora la precision del LLM al elegir parametros.
+- **Tres herramientas separadas**: `analyze_data` para queries estandar (filtrado, ranking, tendencia), `cross_metric_analysis` para analisis multivariable que requiere cruzar dos metricas o calcular crecimiento de ordenes, y `generate_chart_data` para generar visualizaciones interactivas. Esto simplifica el schema de cada tool y mejora la precision del LLM al elegir parametros.
 - **GPT-4o**: Mejor balance costo/velocidad/calidad para queries interactivas. Respuestas en ~3-8 segundos.
 - **Pandas en backend (sin DB)**: Los datos caben en memoria (~12K rows de metricas + ~1.2K de ordenes). Pandas es optimo para transformaciones analiticas sin overhead de conexion a base de datos.
 - **FastAPI**: Soporte nativo async, validacion con Pydantic, documentacion automatica OpenAPI en `/docs`.
 - **Sanitizacion de NaN**: Los valores NaN de NumPy/Pandas se limpian recursivamente antes de serializar a JSON para evitar errores en la API REST.
+- **Recharts para visualizaciones**: Libreria declarativa que se integra naturalmente con componentes React. El LLM genera datos estructurados y el frontend los renderiza, separando logica de presentacion.
+- **SMTP nativo**: Se usa la libreria estandar de Python (`smtplib`) para envio de emails, evitando dependencias externas innecesarias.
 
 ## Instalacion y Ejecucion
 
@@ -116,6 +160,12 @@ pip install -r requirements.txt
 cp .env.example .env
 # Editar .env y agregar tu OPENAI_API_KEY:
 # OPENAI_API_KEY=sk-proj-xxxxx...
+
+# (Opcional) Para envio de emails, configurar SMTP:
+# SMTP_HOST=smtp.gmail.com
+# SMTP_PORT=587
+# SMTP_USER=tu-correo@gmail.com
+# SMTP_PASSWORD=tu-app-password
 
 # Ejecutar
 python main.py
@@ -139,20 +189,22 @@ El frontend estara disponible en `http://localhost:3000`
 
 1. Abre `http://localhost:3000`
 2. En el **Bot Conversacional**, haz clic en cualquiera de las 8 preguntas sugeridas
-3. En **Reporte Ejecutivo**, haz clic en "Generar Reporte" (toma ~30-60 segundos)
+3. Pide una tendencia para ver un grafico interactivo generado automaticamente
+4. En **Reporte Ejecutivo**, haz clic en "Generar Reporte" (toma ~30-60 segundos)
+5. Usa los botones de exportacion: Descargar MD, Exportar CSV, Ver HTML, Enviar Email
 
 ## Estructura del Proyecto
 
 ```
 rappi-insights/
 ├── backend/
-│   ├── main.py              # FastAPI app, 8 endpoints REST, CORS, lazy init
+│   ├── main.py              # FastAPI app, 12 endpoints REST, CORS, lazy init, export/email
 │   ├── data_loader.py       # Carga Excel, transformaciones, contexto LLM
-│   ├── chatbot.py           # Bot con GPT-4o + 2 Tools (analyze_data, cross_metric_analysis)
+│   ├── chatbot.py           # Bot con GPT-4o + 3 Tools (analyze_data, cross_metric_analysis, generate_chart_data)
 │   ├── insights_engine.py   # Motor de insights: anomalias, tendencias, benchmarks, correlaciones
 │   ├── requirements.txt     # Dependencias Python
-│   ├── .env.example         # Template de configuracion
-│   └── .env                 # API key OpenAI (no versionado)
+│   ├── .env.example         # Template de configuracion (OpenAI + SMTP)
+│   └── .env                 # API key OpenAI + config SMTP (no versionado)
 ├── frontend/
 │   ├── public/
 │   │   └── index.html
@@ -162,9 +214,10 @@ rappi-insights/
 │   │   ├── App.js           # Componente principal con navegacion
 │   │   ├── App.css          # Layout principal (sidebar + content)
 │   │   └── components/
-│   │       ├── Sidebar.js/css    # Navegacion lateral con branding
-│   │       ├── ChatView.js/css   # Interfaz chatbot (mensajes, sugerencias, typing)
-│   │       └── ReportView.js/css # Visor de reportes (generacion, descarga MD, ver HTML)
+│   │       ├── Sidebar.js/css       # Navegacion lateral con branding
+│   │       ├── ChatView.js/css      # Interfaz chatbot (mensajes, sugerencias, graficos, export)
+│   │       ├── ChartRenderer.js/css # [BONUS] Componente de graficos interactivos (Recharts)
+│   │       └── ReportView.js/css    # Visor de reportes (generacion, descarga MD/CSV/HTML, email)
 │   └── package.json
 ├── data/
 │   └── rappi_data.xlsx      # Datos operacionales (RAW_INPUT_METRICS + RAW_ORDERS)
@@ -178,12 +231,15 @@ rappi-insights/
 | GET | `/` | Info basica de la API |
 | GET | `/api/health` | Health check y estado de configuracion de API key |
 | GET | `/api/data/summary` | Resumen de dimensiones: paises, ciudades, metricas, tipos de zona |
-| POST | `/api/chat` | Enviar mensaje al chatbot (body: `{"message": "..."}`) |
+| POST | `/api/chat` | Enviar mensaje al chatbot (body: `{"message": "..."}`) - incluye `chart_data` si aplica |
 | POST | `/api/chat/reset` | Reiniciar conversacion y memoria |
 | GET | `/api/chat/suggestions` | Obtener 8 preguntas sugeridas |
 | POST | `/api/insights/report` | Generar reporte ejecutivo completo (JSON con markdown + raw insights) |
 | GET | `/api/insights/report/html` | Generar reporte como pagina HTML estilizada con branding Rappi |
-| POST | `/api/data/query` | Query directo a los datos con filtros (body: dataset, countries, cities, metrics, zone_types) |
+| POST | `/api/data/query` | Query directo a los datos con filtros |
+| POST | `/api/export/csv` | **[BONUS]** Exportar datos filtrados como CSV |
+| POST | `/api/export/report-csv` | **[BONUS]** Exportar insights del reporte como CSV estructurado |
+| POST | `/api/email/send-report` | **[BONUS]** Enviar reporte ejecutivo por email (body: `{"to_email": "..."}`) |
 
 ## Datos
 
@@ -218,17 +274,19 @@ El sistema trabaja con dos datasets del archivo Excel:
 ### Presentacion sugerida (35 min)
 
 1. **Contexto y approach (3 min)**: Explicar la arquitectura, por que Function Calling sobre RAG, por que GPT-4o
-2. **Demo del bot (10 min)**: Mostrar las 6 preguntas de diferente complejidad:
+2. **Demo del bot (12 min)**: Mostrar las 6 preguntas de diferente complejidad + graficos interactivos:
    - Filtrado: "¿Cuales son las 5 zonas con mayor % Lead Penetration esta semana?"
    - Comparacion: "Compara el Perfect Order entre zonas Wealthy y Non Wealthy en Mexico"
-   - Tendencia: "Muestra la evolucion de Gross Profit UE en Chapinero ultimas 8 semanas"
-   - Agregacion: "¿Cual es el promedio de Lead Penetration por pais?"
+   - Tendencia: "Muestra la evolucion de Gross Profit UE en Chapinero ultimas 8 semanas" (genera grafico de linea)
+   - Agregacion: "¿Cual es el promedio de Lead Penetration por pais?" (genera grafico de barras)
    - Multivariable: "¿Que zonas tienen alto Lead Penetration pero bajo Perfect Order?"
    - Inferencia: "¿Cuales son las zonas que mas crecen en ordenes en las ultimas 5 semanas?"
+   - Mostrar exportacion de conversacion a CSV
 3. **Insights automaticos (5 min)**: Generar el reporte y mostrar anomalias, tendencias, recomendaciones
-4. **Decisiones tecnicas (5 min)**: Function Calling vs RAG, dos tools, sanitizacion NaN, Pandas sin DB
-5. **Limitaciones y proximos pasos (2 min)**: Ver seccion abajo
-6. **Q&A (10 min)**
+4. **Bonus features (5 min)**: Exportar reporte a CSV, enviar por email, mostrar graficos en detalle
+5. **Decisiones tecnicas (3 min)**: Function Calling vs RAG, tres tools, sanitizacion NaN, Pandas sin DB
+6. **Limitaciones y proximos pasos (2 min)**: Ver seccion abajo
+7. **Q&A (5 min)**
 
 ## Limitaciones y Proximos Pasos
 
@@ -236,15 +294,15 @@ El sistema trabaja con dos datasets del archivo Excel:
 - Datos estaticos (snapshot Excel, no conexion en tiempo real a warehouse)
 - Sin autenticacion de usuarios
 - Sin persistencia de conversaciones entre sesiones del navegador
-- Visualizaciones en texto/markdown (sin graficos interactivos tipo charts)
 - El reporte ejecutivo toma ~30-60 segundos en generarse (depende de la API de OpenAI)
+- El envio de email requiere configuracion SMTP manual (app password para Gmail)
 
 ### Proximos pasos con mas tiempo
-1. **Visualizaciones interactivas**: Integrar Recharts o D3.js para graficos de tendencias, mapas de calor por zona, y scatter plots de correlacion
-2. **Conexion a datos en vivo**: API directa al data warehouse de Rappi (Snowflake/BigQuery) con refresh automatico
-3. **Alertas proactivas**: Sistema de notificaciones via Slack/email cuando se detecten anomalias criticas (z-score >3)
-4. **Multi-usuario**: Autenticacion OAuth y personalizacion por rol (ops, producto, finanzas)
-5. **Exportacion a PDF**: Reportes ejecutivos con formato profesional para presentaciones a liderazgo
-6. **Cache inteligente**: Redis para cachear analisis frecuentes y reducir latencia y costos de API
-7. **Historico de insights**: Tracking de insights a lo largo del tiempo para medir si las recomendaciones tuvieron impacto medible
-8. **Streaming de respuestas**: Server-Sent Events para mostrar la respuesta del bot en tiempo real mientras se genera
+1. **Conexion a datos en vivo**: API directa al data warehouse de Rappi (Snowflake/BigQuery) con refresh automatico
+2. **Alertas proactivas**: Sistema de notificaciones via Slack/email cuando se detecten anomalias criticas (z-score >3)
+3. **Multi-usuario**: Autenticacion OAuth y personalizacion por rol (ops, producto, finanzas)
+4. **Exportacion a PDF**: Reportes ejecutivos con formato profesional usando WeasyPrint o similar
+5. **Cache inteligente**: Redis para cachear analisis frecuentes y reducir latencia y costos de API
+6. **Historico de insights**: Tracking de insights a lo largo del tiempo para medir si las recomendaciones tuvieron impacto medible
+7. **Streaming de respuestas**: Server-Sent Events para mostrar la respuesta del bot en tiempo real mientras se genera
+8. **Graficos avanzados**: Mapas de calor por zona, scatter plots de correlacion, graficos de radar por metrica

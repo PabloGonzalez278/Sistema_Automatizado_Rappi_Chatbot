@@ -27,6 +27,12 @@
   margin-top: 2px;
 }
 
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .reset-btn {
   display: flex;
   align-items: center;

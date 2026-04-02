@@ -2,9 +2,17 @@
 FastAPI Backend - API para el Sistema de Analisis Inteligente de Rappi.
 """
 import os
+import io
+import csv
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -59,6 +67,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     suggestions: list[str]
+    chart_data: dict | None = None
 
 
 class DataQueryRequest(BaseModel):
@@ -174,6 +183,157 @@ def query(request: DataQueryRequest):
         "count": len(df),
         "data": df.head(100).to_dict(orient="records"),
     }
+
+
+# ─── BONUS: Export endpoints ───────────────────────────────────────
+
+class ExportCSVRequest(BaseModel):
+    dataset: str = "metrics"
+    countries: list[str] | None = None
+    cities: list[str] | None = None
+    metrics: list[str] | None = None
+    zone_types: list[str] | None = None
+
+
+@app.post("/api/export/csv")
+def export_csv(request: ExportCSVRequest):
+    """Export filtered data as CSV file."""
+    df = query_data(
+        dataset=request.dataset,
+        countries=request.countries,
+        cities=request.cities,
+        metrics=request.metrics,
+        zone_types=request.zone_types,
+    )
+    stream = io.StringIO()
+    df.to_csv(stream, index=False)
+    stream.seek(0)
+    return StreamingResponse(
+        iter([stream.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=rappi_export_{request.dataset}.csv"},
+    )
+
+
+@app.post("/api/export/report-csv")
+def export_report_csv():
+    """Export executive report insights as CSV."""
+    engine = get_insights_engine()
+    result = engine.generate_full_report()
+    raw = result.get("raw_insights", {})
+
+    stream = io.StringIO()
+    writer = csv.writer(stream)
+
+    # Write anomalies
+    writer.writerow(["SECCION", "PAIS", "CIUDAD", "ZONA", "METRICA", "VALOR", "DETALLE"])
+    for item in raw.get("anomalies", []):
+        writer.writerow([
+            "Anomalia",
+            item.get("country", ""),
+            item.get("city", ""),
+            item.get("zone", ""),
+            item.get("metric", ""),
+            item.get("value", ""),
+            item.get("detail", item.get("type", "")),
+        ])
+    for item in raw.get("concerning_trends", []):
+        writer.writerow([
+            "Tendencia Preocupante",
+            item.get("country", ""),
+            item.get("city", ""),
+            item.get("zone", ""),
+            item.get("metric", ""),
+            item.get("value", ""),
+            item.get("detail", item.get("type", "")),
+        ])
+    for item in raw.get("opportunities", []):
+        writer.writerow([
+            "Oportunidad",
+            item.get("country", ""),
+            item.get("city", ""),
+            item.get("zone", ""),
+            item.get("metric", ""),
+            item.get("value", ""),
+            item.get("detail", item.get("type", "")),
+        ])
+
+    stream.seek(0)
+    return StreamingResponse(
+        iter([stream.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=rappi_reporte_insights.csv"},
+    )
+
+
+# ─── BONUS: Email endpoint ────────────────────────────────────────
+
+class EmailRequest(BaseModel):
+    to_email: str
+    subject: str = "Reporte Ejecutivo Rappi - Insights Automaticos"
+    include_report: bool = True
+
+
+@app.post("/api/email/send-report")
+def send_report_email(request: EmailRequest):
+    """Send executive report via email using SMTP."""
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+    from_email = os.getenv("SMTP_FROM", smtp_user)
+
+    if not smtp_user or not smtp_password:
+        raise HTTPException(
+            status_code=500,
+            detail="Configuracion SMTP no encontrada. Agrega SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD en .env"
+        )
+
+    # Generate report
+    engine = get_insights_engine()
+    result = engine.generate_full_report()
+    report_md = result["report_markdown"]
+
+    # Build HTML version
+    import markdown
+    html_body = markdown.markdown(report_md, extensions=["tables", "fenced_code"])
+
+    # Create email
+    msg = MIMEMultipart("alternative")
+    msg["From"] = from_email
+    msg["To"] = request.to_email
+    msg["Subject"] = request.subject
+
+    # Plain text version
+    msg.attach(MIMEText(report_md, "plain", "utf-8"))
+
+    # HTML version with styling
+    styled_html = f"""<html>
+<head><style>
+    body {{ font-family: 'Segoe UI', sans-serif; color: #333; line-height: 1.6; padding: 20px; }}
+    h1 {{ color: #FF441F; }} h2 {{ color: #1a1a2e; }} h3 {{ color: #FF441F; }}
+    table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
+    th {{ background: #FF441F; color: white; padding: 8px 12px; text-align: left; }}
+    td {{ padding: 6px 12px; border-bottom: 1px solid #eee; }}
+</style></head>
+<body>{html_body}</body></html>"""
+    msg.attach(MIMEText(styled_html, "html", "utf-8"))
+
+    # Attach MD file
+    md_attachment = MIMEBase("application", "octet-stream")
+    md_attachment.set_payload(report_md.encode("utf-8"))
+    encoders.encode_base64(md_attachment)
+    md_attachment.add_header("Content-Disposition", "attachment", filename="reporte_rappi.md")
+    msg.attach(md_attachment)
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        return {"status": "ok", "message": f"Reporte enviado exitosamente a {request.to_email}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al enviar email: {str(e)}")
 
 
 if __name__ == "__main__":

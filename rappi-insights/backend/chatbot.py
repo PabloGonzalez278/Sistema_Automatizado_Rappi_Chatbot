@@ -154,8 +154,153 @@ TOOLS_OPENAI = [
                 "required": ["condition"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_chart_data",
+            "description": "Genera datos estructurados para crear graficos/visualizaciones. Usa esta herramienta cuando el usuario pida ver tendencias, evoluciones, comparaciones visuales, o cuando un grafico ayude a entender mejor los datos. SIEMPRE usa esta herramienta ademas de analyze_data cuando la pregunta involucre tendencias temporales o comparaciones entre grupos.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chart_type": {
+                        "type": "string",
+                        "enum": ["line", "bar", "area"],
+                        "description": "Tipo de grafico: 'line' para tendencias temporales, 'bar' para comparaciones entre grupos, 'area' para evoluciones con area"
+                    },
+                    "dataset": {
+                        "type": "string",
+                        "enum": ["metrics", "orders"],
+                        "description": "Dataset a consultar"
+                    },
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Metricas a graficar"
+                    },
+                    "group_by": {
+                        "type": "string",
+                        "enum": ["COUNTRY", "CITY", "ZONE", "ZONE_TYPE", "ZONE_PRIORITIZATION"],
+                        "description": "Dimension para agrupar series en el grafico"
+                    },
+                    "countries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro de paises"
+                    },
+                    "cities": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro de ciudades"
+                    },
+                    "zones": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filtro de zonas"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Titulo descriptivo para el grafico"
+                    }
+                },
+                "required": ["chart_type", "dataset"]
+            }
+        }
     }
 ]
+
+
+def _safe_round(val, decimals=4):
+    """Round a value safely, returning None for NaN/Inf."""
+    if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
+        return None
+    try:
+        return round(float(val), decimals)
+    except (TypeError, ValueError):
+        return None
+
+
+def execute_chart_data(params: dict) -> str:
+    """Generate structured chart data for frontend visualization."""
+    chart_type = params.get("chart_type", "line")
+    dataset = params.get("dataset", "metrics")
+    metric_names = params.get("metrics")
+    group_by = params.get("group_by")
+    title = params.get("title", "Grafico")
+
+    df = query_data(
+        dataset=dataset,
+        countries=params.get("countries"),
+        cities=params.get("cities"),
+        zones=params.get("zones"),
+        metrics=metric_names,
+    )
+
+    if df.empty:
+        return json.dumps({"error": "No data found"})
+
+    if dataset == "orders":
+        week_cols = [c for c in df.columns if c.startswith("L") and c.endswith("W")]
+    else:
+        week_cols = [c for c in df.columns if c.endswith("_ROLL")]
+
+    week_labels = [w.replace("_ROLL", "") for w in week_cols]
+
+    chart_data = {"type": chart_type, "title": title, "data": [], "series": []}
+
+    if chart_type in ["line", "area"]:
+        # Time series chart
+        if group_by and group_by in df.columns:
+            groups = df.groupby(group_by)
+            series_names = []
+            for name, group in groups:
+                series_names.append(str(name))
+            chart_data["series"] = series_names[:10]  # Limit to 10 series
+
+            for i, week in enumerate(week_cols):
+                point = {"week": week_labels[i]}
+                for name, group in df.groupby(group_by):
+                    if str(name) in chart_data["series"]:
+                        point[str(name)] = _safe_round(group[week].mean())
+                chart_data["data"].append(point)
+        elif "METRIC" in df.columns:
+            unique_metrics = df["METRIC"].unique()[:5]
+            chart_data["series"] = list(unique_metrics)
+            for i, week in enumerate(week_cols):
+                point = {"week": week_labels[i]}
+                for metric in unique_metrics:
+                    mdf = df[df["METRIC"] == metric]
+                    point[metric] = _safe_round(mdf[week].mean())
+                chart_data["data"].append(point)
+        else:
+            chart_data["series"] = ["Total"]
+            for i, week in enumerate(week_cols):
+                val = df[week].sum() if dataset == "orders" else df[week].mean()
+                chart_data["data"].append({"week": week_labels[i], "Total": _safe_round(val)})
+
+    elif chart_type == "bar":
+        # Bar chart - comparison
+        latest = week_cols[-1]
+        if group_by and group_by in df.columns:
+            if "METRIC" in df.columns and metric_names and len(metric_names) == 1:
+                agg = df.groupby(group_by)[latest].mean().sort_values(ascending=False).head(15)
+                chart_data["series"] = [metric_names[0]]
+                for name, val in agg.items():
+                    chart_data["data"].append({"name": str(name), metric_names[0]: _safe_round(val)})
+            else:
+                agg = df.groupby(group_by)[latest].mean().sort_values(ascending=False).head(15)
+                chart_data["series"] = ["Valor"]
+                for name, val in agg.items():
+                    chart_data["data"].append({"name": str(name), "Valor": _safe_round(val)})
+        else:
+            if "METRIC" in df.columns:
+                for metric in df["METRIC"].unique()[:10]:
+                    mdf = df[df["METRIC"] == metric]
+                    chart_data["data"].append({"name": metric, "Valor": _safe_round(mdf[latest].mean())})
+                chart_data["series"] = ["Valor"]
+
+    # Return as special JSON format that frontend can detect
+    return "CHART_DATA:" + json.dumps(chart_data)
 
 
 def execute_cross_metric_analysis(params: dict) -> str:
@@ -590,6 +735,8 @@ DATOS DISPONIBLES PARA FILTRAR:
                 args = json.loads(tool_call.function.arguments)
                 if tool_call.function.name == "cross_metric_analysis":
                     result = execute_cross_metric_analysis(args)
+                elif tool_call.function.name == "generate_chart_data":
+                    result = execute_chart_data(args)
                 else:
                     result = execute_analysis(args)
                 self.conversation_history.append({
@@ -613,10 +760,24 @@ DATOS DISPONIBLES PARA FILTRAR:
         final_text = msg.content or ""
         self.conversation_history.append({"role": "assistant", "content": final_text})
 
-        return {
+        # Extract chart data from tool results if any
+        chart_data = None
+        for item in self.conversation_history:
+            if item.get("role") == "tool" and isinstance(item.get("content"), str) and item["content"].startswith("CHART_DATA:"):
+                try:
+                    chart_json = item["content"][len("CHART_DATA:"):]
+                    chart_data = json.loads(chart_json)
+                except json.JSONDecodeError:
+                    pass
+
+        result = {
             "response": final_text,
             "suggestions": self._generate_followup_suggestions(user_message, final_text),
         }
+        if chart_data:
+            result["chart_data"] = chart_data
+
+        return result
 
     def _generate_followup_suggestions(self, question: str, answer: str) -> list[str]:
         base_suggestions = [

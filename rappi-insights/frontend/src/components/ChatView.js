@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { FiSend, FiRefreshCw, FiCpu, FiUser } from 'react-icons/fi';
+import { FiSend, FiRefreshCw, FiCpu, FiUser, FiDownload } from 'react-icons/fi';
 import axios from 'axios';
+import ChartRenderer from './ChartRenderer';
 import './ChatView.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -44,6 +45,7 @@ function ChatView() {
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: response.data.response,
+        chart_data: response.data.chart_data || null,
       }]);
       if (response.data.suggestions?.length) {
         setSuggestions(response.data.suggestions);
@@ -76,6 +78,23 @@ function ChatView() {
     }
   };
 
+  const exportChatAsCSV = () => {
+    if (messages.length === 0) return;
+    const rows = [['Rol', 'Mensaje']];
+    messages.forEach(msg => {
+      const clean = msg.content.replace(/"/g, '""');
+      rows.push([msg.role === 'user' ? 'Usuario' : 'Asistente', `"${clean}"`]);
+    });
+    const csvContent = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rappi-chat-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="chat-view">
       <header className="chat-header">
@@ -83,9 +102,16 @@ function ChatView() {
           <h2>Bot Conversacional de Datos</h2>
           <p className="header-subtitle">Pregunta sobre metricas operacionales de Rappi</p>
         </div>
-        <button className="reset-btn" onClick={resetChat} title="Nueva conversacion">
-          <FiRefreshCw /> Nueva conversacion
-        </button>
+        <div className="header-actions">
+          {messages.length > 0 && (
+            <button className="reset-btn" onClick={exportChatAsCSV} title="Exportar conversacion">
+              <FiDownload /> Exportar CSV
+            </button>
+          )}
+          <button className="reset-btn" onClick={resetChat} title="Nueva conversacion">
+            <FiRefreshCw /> Nueva conversacion
+          </button>
+        </div>
       </header>
 
       <div className="chat-messages">
@@ -111,6 +137,9 @@ function ChatView() {
             </div>
             <div className="message-content">
               <ReactMarkdown>{msg.content}</ReactMarkdown>
+              {msg.chart_data && (
+                <ChartRenderer chartData={msg.chart_data} />
+              )}
             </div>
           </div>
         ))}
