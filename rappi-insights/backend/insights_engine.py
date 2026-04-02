@@ -36,11 +36,29 @@ class InsightsEngine:
 
         report_md = self._generate_executive_report(raw_insights)
 
+        # Clean NaN values for JSON serialization
+        clean_insights = self._clean_for_json(raw_insights)
+
         return {
             "report_markdown": report_md,
-            "raw_insights": raw_insights,
+            "raw_insights": clean_insights,
             "generated_at": datetime.now().isoformat(),
         }
+
+    @staticmethod
+    def _clean_for_json(obj):
+        """Recursively replace NaN/Inf values with None for JSON serialization."""
+        import math
+        if isinstance(obj, dict):
+            return {k: InsightsEngine._clean_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [InsightsEngine._clean_for_json(item) for item in obj]
+        elif isinstance(obj, float) or (hasattr(obj, 'item') and isinstance(obj.item(), float)):
+            val = float(obj)
+            if math.isnan(val) or math.isinf(val):
+                return None
+            return val
+        return obj
 
     def _detect_anomalies(self) -> list[dict]:
         """Detect statistical anomalies in the data."""
