@@ -114,7 +114,7 @@ El chatbot genera automaticamente graficos interactivos cuando la pregunta invol
 
 | Componente | Tecnologia | Justificacion |
 |-----------|-----------|---------------|
-< HEAD
+< 
 | **LLM** | GPT-4o (OpenAI) | Alta capacidad de razonamiento, function calling nativo, buen manejo de espanol, velocidad de respuesta |
 | **Backend** | Python 3.12 + FastAPI | Ecosistema de datos maduro (Pandas/NumPy), async nativo, validacion con Pydantic, docs automaticos |
 | **Frontend** | React 19 | Componentes reutilizables, renderizado markdown nativo, ecosystem robusto |
