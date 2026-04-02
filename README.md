@@ -114,6 +114,7 @@ El chatbot genera automaticamente graficos interactivos cuando la pregunta invol
 
 | Componente | Tecnologia | Justificacion |
 |-----------|-----------|---------------|
+<<<<<<< HEAD
 | **LLM** | GPT-4o (OpenAI) | Alta capacidad de razonamiento, function calling nativo, buen manejo de espanol, velocidad de respuesta |
 | **Backend** | Python 3.12 + FastAPI | Ecosistema de datos maduro (Pandas/NumPy), async nativo, validacion con Pydantic, docs automaticos |
 | **Frontend** | React 19 | Componentes reutilizables, renderizado markdown nativo, ecosystem robusto |
@@ -121,6 +122,13 @@ El chatbot genera automaticamente graficos interactivos cuando la pregunta invol
 | **Datos** | Pandas + NumPy | Transformaciones eficientes sobre ~13K filas, analisis estadistico built-in (z-score, correlacion, regresion lineal) |
 | **Integracion LLM** | OpenAI SDK + Function Calling | Permite al LLM ejecutar 3 herramientas de analisis con parametros dinamicos sobre datos reales |
 | **Email** | smtplib (Python stdlib) | Envio SMTP nativo sin dependencias externas, soporte TLS |
+=======
+| **LLM** | OpenAI | Alta capacidad de razonamiento, tool use nativo, excelente espanol |
+| **Backend** | Python + FastAPI | Ecosistema de datos maduro (Pandas/NumPy), async, tipado |
+| **Frontend** | React | Componentes reutilizables, ecosystem robusto, renderizado markdown |
+| **Datos** | Pandas + NumPy | Transformaciones eficientes, analisis estadistico built-in |
+| **Integracion LLM** | Anthropic SDK + Tool Use | Permite al LLM ejecutar analisis reales sobre datos reales |
+>>>>>>> 399b2987cbd3ee0f5dc9f304552184058b702bb7
 
 ### Decisiones de Diseno
 
