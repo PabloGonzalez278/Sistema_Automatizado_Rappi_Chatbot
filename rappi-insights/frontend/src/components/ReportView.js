@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { FiFileText, FiDownload, FiRefreshCw, FiExternalLink, FiMail, FiDatabase } from 'react-icons/fi';
+import { FiFileText, FiDownload, FiRefreshCw, FiMail, FiDatabase } from 'react-icons/fi';
 import axios from 'axios';
 import './ReportView.css';
 
@@ -39,8 +39,21 @@ function ReportView() {
     URL.revokeObjectURL(url);
   };
 
-  const openHtmlReport = () => {
-    window.open(`${API_BASE}/api/insights/report/html`, '_blank');
+  const downloadPDF = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/insights/report/pdf`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rappi-reporte-ejecutivo-${new Date().toISOString().slice(0, 10)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Error al generar PDF: ' + (err.response?.data?.detail || err.message));
+    }
   };
 
   const exportCSV = async () => {
@@ -99,8 +112,8 @@ function ReportView() {
               <button className="action-btn" onClick={exportCSV} disabled={exportingCSV}>
                 <FiDatabase /> {exportingCSV ? 'Exportando...' : 'Exportar CSV'}
               </button>
-              <button className="action-btn" onClick={openHtmlReport}>
-                <FiExternalLink /> Ver HTML
+              <button className="action-btn" onClick={downloadPDF}>
+                <FiDownload /> Exportar PDF
               </button>
               <button className="action-btn email-btn" onClick={() => setShowEmailForm(!showEmailForm)}>
                 <FiMail /> Enviar Email

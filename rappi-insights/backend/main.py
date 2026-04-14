@@ -120,37 +120,32 @@ def generate_report():
     return result
 
 
-@app.get("/api/insights/report/html")
-def generate_report_html():
-    """Generate report and return as styled HTML."""
-    import markdown
-    engine = get_insights_engine()
-    result = engine.generate_full_report()
-
-    html_content = markdown.markdown(
+def _build_report_html(result: dict) -> str:
+    """Build styled HTML from report result (reused by PDF and email)."""
+    import markdown as md_lib
+    html_content = md_lib.markdown(
         result["report_markdown"],
         extensions=["tables", "fenced_code", "toc"],
     )
-
-    styled_html = f"""<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reporte Ejecutivo Rappi</title>
     <style>
-        body {{ font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 40px; color: #333; line-height: 1.6; }}
-        h1 {{ color: #FF441F; border-bottom: 3px solid #FF441F; padding-bottom: 10px; }}
-        h2 {{ color: #1a1a2e; margin-top: 30px; border-bottom: 1px solid #eee; padding-bottom: 8px; }}
-        h3 {{ color: #FF441F; }}
+        @page {{ size: A4; margin: 2cm; }}
+        body {{ font-family: 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px; color: #333; line-height: 1.6; font-size: 12px; }}
+        h1 {{ color: #FF441F; border-bottom: 3px solid #FF441F; padding-bottom: 10px; font-size: 22px; }}
+        h2 {{ color: #1a1a2e; margin-top: 30px; border-bottom: 1px solid #eee; padding-bottom: 8px; font-size: 17px; }}
+        h3 {{ color: #FF441F; font-size: 14px; }}
         table {{ border-collapse: collapse; width: 100%; margin: 15px 0; }}
-        th {{ background: #FF441F; color: white; padding: 10px 12px; text-align: left; }}
-        td {{ padding: 8px 12px; border-bottom: 1px solid #eee; }}
+        th {{ background: #FF441F; color: white; padding: 8px 10px; text-align: left; font-size: 11px; }}
+        td {{ padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 11px; }}
         tr:nth-child(even) {{ background: #f9f9f9; }}
-        code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }}
+        code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 10px; }}
         blockquote {{ border-left: 4px solid #FF441F; padding: 10px 15px; background: #fff5f3; margin: 15px 0; }}
         ul, ol {{ padding-left: 20px; }}
-        li {{ margin: 5px 0; }}
+        li {{ margin: 4px 0; }}
         .header {{ text-align: center; margin-bottom: 30px; }}
         .footer {{ text-align: center; color: #999; font-size: 0.85em; margin-top: 50px; border-top: 1px solid #eee; padding-top: 15px; }}
     </style>
@@ -167,7 +162,37 @@ def generate_report_html():
 </body>
 </html>"""
 
+
+@app.get("/api/insights/report/html")
+def generate_report_html():
+    """Generate report and return as styled HTML."""
+    engine = get_insights_engine()
+    result = engine.generate_full_report()
+    styled_html = _build_report_html(result)
     return HTMLResponse(content=styled_html)
+
+
+@app.get("/api/insights/report/pdf")
+def generate_report_pdf():
+    """Generate report and return as downloadable PDF."""
+    from xhtml2pdf import pisa
+
+    engine = get_insights_engine()
+    result = engine.generate_full_report()
+    styled_html = _build_report_html(result)
+
+    pdf_buffer = io.BytesIO()
+    pisa_status = pisa.CreatePDF(styled_html, dest=pdf_buffer, encoding="utf-8")
+
+    if pisa_status.err:
+        raise HTTPException(status_code=500, detail="Error al generar el PDF")
+
+    pdf_buffer.seek(0)
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=rappi-reporte-ejecutivo.pdf"},
+    )
 
 
 @app.post("/api/data/query")

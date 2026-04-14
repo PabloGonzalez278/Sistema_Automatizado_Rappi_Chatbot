@@ -83,7 +83,7 @@ Analisis automatico que genera un reporte ejecutivo completo con:
 5. **Oportunidades**: Zonas prioritarias bajo rendimiento, gaps de adopcion, momentum positivo (WoW >5%)
 6. **Recomendaciones accionables**: Top 5-7 acciones priorizadas por impacto y urgencia
 
-**Salida**: Markdown (descargable), HTML estilizado con branding Rappi, **[BONUS]** CSV exportable, **[BONUS]** Envio automatico por email
+**Salida**: Markdown (descargable), PDF estilizado con branding Rappi, **[BONUS]** CSV exportable, **[BONUS]** Envio automatico por email
 
 ## Bonus Features Implementados
 
@@ -131,6 +131,23 @@ El chatbot genera automaticamente graficos interactivos cuando la pregunta invol
 - **GPT-4o**: Mejor balance costo/velocidad/calidad para queries interactivas. Respuestas en ~3-8 segundos.
 - **Pandas en backend (sin DB)**: Los datos caben en memoria (~12K rows de metricas + ~1.2K de ordenes). Pandas es optimo para transformaciones analiticas sin overhead de conexion a base de datos.
 - **FastAPI**: Soporte nativo async, validacion con Pydantic, documentacion automatica OpenAPI en `/docs`.
+
+### Estimacion de Costos (OpenAI GPT-4o)
+
+| Operacion | Tokens Input (aprox) | Tokens Output (aprox) | Costo por operacion |
+|-----------|---------------------|----------------------|---------------------|
+| Pregunta simple al bot (1 tool call) | ~2,000 | ~800 | ~$0.01 |
+| Pregunta compleja (2-3 tool calls) | ~5,000 | ~1,500 | ~$0.03 |
+| Generacion de reporte ejecutivo | ~8,000 | ~3,000 | ~$0.05 |
+
+**Precios GPT-4o (abril 2025):** Input: $2.50/1M tokens, Output: $10.00/1M tokens
+
+**Costo estimado por sesion tipica:**
+- Sesion de 10 preguntas al bot: **~$0.15 - $0.25 USD**
+- Generacion de 1 reporte ejecutivo: **~$0.05 USD**
+- **Costo mensual estimado** (50 sesiones/dia, 20 dias laborales): **~$150 - $250 USD/mes**
+
+> Nota: Los costos pueden variar segun la complejidad de las preguntas y la cantidad de tool calls que GPT-4o decida ejecutar. Las preguntas que requieren multiples herramientas (ej: inferencia con cruce de datos) son las mas costosas.
 
 ## Instalacion y Ejecucion
 

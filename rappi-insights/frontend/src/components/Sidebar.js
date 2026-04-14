@@ -31,7 +31,7 @@ function Sidebar({ activeView, setActiveView }) {
         </button>
       </nav>
       <div className="sidebar-footer">
-        <div className="tech-badge">Powered by Claude AI</div>
+        <div className="tech-badge">Powered by ChatGPT</div>
         <p className="version">v1.0.0</p>
       </div>
     </aside>
